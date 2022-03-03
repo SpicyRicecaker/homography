@@ -1,7 +1,18 @@
 // use eigenvalues::davidson::Davidson;
 // use eigenvalues::{DavidsonCorrection, SpectrumTarget};
-use nalgebra::*;
-use nalgebra::{DMatrix, DVector};
+// use nalgebra::*;
+// use nalgebra::{DMatrix, DVector};
+use opencv::calib3d;
+use opencv::core::CV_32FC1;
+use opencv::core::CV_32FC2;
+use opencv::core::CV_64FC1;
+use opencv::core::Matx31f;
+use opencv::core::Point2f;
+use opencv::core::Point3f;
+use opencv::core::ToOutputArray;
+use opencv::core::Vector;
+use opencv::prelude::*;
+use opencv::types::VectorOfPoint2f;
 
 use std::error::Error;
 use std::f64::INFINITY;
@@ -36,194 +47,71 @@ fn example() -> Result<(), Box<dyn Error>> {
     while rdr.read_record(&mut raw_record)? {
         let n: Record = raw_record.deserialize(Some(&headers))?;
         rdr.read_record(&mut raw_record)?;
-        let mut p: Record = raw_record.deserialize(Some(&headers))?;
-        p.x1 += 400.;
-        p.x2 += 400.;
-        p.x3 += 400.;
-        p.x4 += 400.;
-        p.y1 += 400.;
-        p.y2 += 400.;
-        p.y3 += 400.;
-        p.y4 += 400.;
+        let p: Record = raw_record.deserialize(Some(&headers))?;
 
-        // See https://www.youtube.com/watch?v=jTCCgxUXhW4
-        // [ 2 2 2 2 ] * [h] = [0]
-        //      A         X  =  B
-        // To solve for X, X=B/A
-        // X=B*A^{-1}
+        let mut n_points: VectorOfPoint2f = VectorOfPoint2f::new();
 
-        // construct matrix
-        let aa: SMatrix<f64, 8, 9> = SMatrix::from_rows(&[
-            RowSVector::<f64, 9>::from_vec(vec![
-                -n.x1,
-                -n.y1,
-                -1.,
-                0.,
-                0.,
-                0.,
-                n.x1 * p.x1,
-                n.y1 * p.x1,
-                p.x1,
-            ]),
-            RowSVector::<f64, 9>::from_vec(vec![
-                0.,
-                0.,
-                0.,
-                -n.x1,
-                -n.y1,
-                -1.,
-                n.x1 * p.y1,
-                n.y1 * p.y1,
-                p.y1,
-            ]),
-            RowSVector::<f64, 9>::from_vec(vec![
-                -n.x2,
-                -n.y2,
-                -1.,
-                0.,
-                0.,
-                0.,
-                n.x2 * p.x2,
-                n.y2 * p.x2,
-                p.x2,
-            ]),
-            RowSVector::<f64, 9>::from_vec(vec![
-                0.,
-                0.,
-                0.,
-                -n.x2,
-                -n.y2,
-                -1.,
-                n.x2 * p.y2,
-                n.y2 * p.y2,
-                p.y2,
-            ]),
-            RowSVector::<f64, 9>::from_vec(vec![
-                -n.x3,
-                -n.y3,
-                -1.,
-                0.,
-                0.,
-                0.,
-                n.x3 * p.x3,
-                n.y3 * p.x3,
-                p.x3,
-            ]),
-            RowSVector::<f64, 9>::from_vec(vec![
-                0.,
-                0.,
-                0.,
-                -n.x3,
-                -n.y3,
-                -1.,
-                n.x3 * p.y3,
-                n.y3 * p.y3,
-                p.y3,
-            ]),
-            RowSVector::<f64, 9>::from_vec(vec![
-                -n.x4,
-                -n.y4,
-                -1.,
-                0.,
-                0.,
-                0.,
-                n.x4 * p.x4,
-                n.y4 * p.x4,
-                p.x4,
-            ]),
-            RowSVector::<f64, 9>::from_vec(vec![
-                0.,
-                0.,
-                0.,
-                -n.x4,
-                -n.y4,
-                -1.,
-                n.x4 * p.y4,
-                n.y4 * p.y4,
-                p.y4,
-            ]),
-            // RowSVector::<f64, 9>::from_vec(vec![0., 0., 0., 0., 0., 0., 0., 0., 1.]),
-        ]);
-        // dbg!(aa);
-        // let bb: SMatrix<f64, 1, 9> = SMatrix::from_vec(vec![0., 0., 0., 0., 0., 0., 0., 0., 1.]);
-        // [1] * [abc] = [0]
-        // aa  *  X    = bb
-        // X = bb/aa
-        // X = bb * aa^{-1}
-        // let h = bb * aa.try_inverse().unwrap();
+        n_points.push(Point2f::new(n.x1 as f32, n.y1 as f32));
+        n_points.push(Point2f::new(n.x2 as f32, n.y2 as f32));
+        n_points.push(Point2f::new(n.x3 as f32, n.y3 as f32));
+        n_points.push(Point2f::new(n.x4 as f32, n.y4 as f32));
 
-        // according to https://medium.com/all-things-about-robotics-and-computer-vision/homography-and-how-to-calculate-it-8abf3a13ddc5,
-        // to solve the matrix, SVD is used. How different is that from inverse?
-        // let h = bb * aa.try_inverse().unwrap();
+        let mut p_points: VectorOfPoint2f = VectorOfPoint2f::new();
+        p_points.push(Point2f::new(p.x1 as f32, p.y1 as f32));
+        p_points.push(Point2f::new(p.x2 as f32, p.y2 as f32));
+        p_points.push(Point2f::new(p.x3 as f32, p.y3 as f32));
+        p_points.push(Point2f::new(p.x4 as f32, p.y4 as f32));
 
-        // let svd = aa.svd(true, true);
+        let mut output: Mat = Mat::default();
 
-        // **
-        // code form https://github.com/dimforge/nalgebra/issues/349#issuecomment-404242773
-        // Add an index to all values and sort the tuples, so we know how it was sorted
-        // let mut s: Vec<(_, _)> = svd
-        //     .singular_values
-        //     .into_iter()
-        //     .zip(svd.v_t.unwrap().columns(0, 8).iter())
-        //     .enumerate()
-        //     .map(|(idx, &v)| (v, idx))
-        //     .collect();
-        // s.sort_unstable_by(|a, b| b.partial_cmp(a).unwrap());
-        // // Unzip the values and order
-        // let order: Vec<_> = s.iter().map(|t| t.1).collect();
-        // let s: Vec<_> = s.iter().map(|t| t.0).collect();
-        // // Reorder u and v using order
-        // **
+        let h = calib3d::find_homography(&n_points, &p_points, &mut output, 1, 0.001).unwrap();
+        dbg!(&h);
 
-        // dbg!(svd.singular_values);
-        // let h = svd.v_t.unwrap();
-        // let h = h.column(7);
-        // see https://sites.ecse.rpi.edu//~qji/CV/svd_review.pdf
-        let aa_transpose = aa.transpose();
-        let a_t_a = aa * aa_transpose;
-        // let decomp = a_t_a.try_symmetric_eigen(0.000002, 0);
-        let mut decomp = a_t_a.symmetric_eigen();
+        // mult h
+        let image_points = Mat::from_slice_2d(&[[n.x1], [n.y1], [1.]]).unwrap();
 
-        let mut idx = 0;
-        let mut max = INFINITY;
-        for (i, &item) in decomp.eigenvalues.iter().enumerate() {
-            if item < max {
-                max = item;
-                idx = i;
-            }
-        };
+        // let image_points: Mat = Mat::new([n.x1 as f32, n.y1 as f32, 1.]);
 
-        // eigenvector
-        let h = decomp.eigenvectors.column(idx);
-
-        // dbg!(decomp);
-        // let matrix = eigenvalues::utils::generate_diagonal_dominant(20, 0.005);
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        // matrix multiplication is not communicative
+        let res = h * image_points;
 
 
-        // println!("eigenvalues:{}", eig.eigenvalues);
-        // println!("eigenvectors:{}", eig.eigenvectors);
+        let res: Mat = res.into_result().unwrap().to_mat().unwrap();
 
-        // see https://www.youtube.com/watch?v=l_qjO4cM74o
+        dbg!(&res);
 
-        let homography: Matrix3<f64> =
-            Matrix3::from_vec(vec![h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1.]);
-        dbg!(homography);
 
-        // // now we can get the derived point for the image
-        // let image_pos: Matrix3x1<f64> =
-        //     Matrix3x1::from_vec(vec![n.pos_runner_x.unwrap(), n.pos_runner_y.unwrap(), 1.]);
+        let nx: f64 = *res.at_2d(0, 0).unwrap();
+        let ny: f64 = *res.at_2d(1, 0).unwrap();
+        let nz: f64 = *res.at_2d(2, 0).unwrap();
 
-        // // DEBUG DEBUG insert original 1 point
-        let image_pos: Matrix3x1<f64> = Matrix3x1::from_vec(vec![n.x1, n.y1, 1.]);
+        dbg!(nx, ny, nz);
 
-        let map_pos = homography * image_pos;
-
-        // dbg!(homography);
-        dbg!(image_pos, map_pos);
-
-        // // dbg!(homography);
-
-        // // dbg!(n, p);
     }
     Ok(())
 }

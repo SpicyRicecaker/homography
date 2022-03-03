@@ -64,7 +64,7 @@ fn example() -> Result<(), Box<dyn Error>> {
 
         let mut output: Mat = Mat::default();
 
-        let h = calib3d::find_homography(&n_points, &p_points, &mut output, 1, 0.001).unwrap();
+        let h = calib3d::find_homography(&n_points, &p_points, &mut output, 0, 0.001).unwrap();
         dbg!(&h);
 
         // mult h
@@ -100,17 +100,15 @@ fn example() -> Result<(), Box<dyn Error>> {
         // matrix multiplication is not communicative
         let res = h * image_points;
 
-
         let res: Mat = res.into_result().unwrap().to_mat().unwrap();
-
-        dbg!(&res);
+        // dbg!(&res);
 
 
         let nx: f64 = *res.at_2d(0, 0).unwrap();
         let ny: f64 = *res.at_2d(1, 0).unwrap();
         let nz: f64 = *res.at_2d(2, 0).unwrap();
 
-        dbg!(nx, ny, nz);
+        dbg!(nx/nz, ny/nz, nz);
 
     }
     Ok(())

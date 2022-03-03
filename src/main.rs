@@ -1,6 +1,10 @@
+// use eigenvalues::davidson::Davidson;
+// use eigenvalues::{DavidsonCorrection, SpectrumTarget};
 use nalgebra::*;
+use nalgebra::{DMatrix, DVector};
 
 use std::error::Error;
+use std::f64::INFINITY;
 // use std::io;
 use std::process;
 // use std::fs;
@@ -32,7 +36,15 @@ fn example() -> Result<(), Box<dyn Error>> {
     while rdr.read_record(&mut raw_record)? {
         let n: Record = raw_record.deserialize(Some(&headers))?;
         rdr.read_record(&mut raw_record)?;
-        let p: Record = raw_record.deserialize(Some(&headers))?;
+        let mut p: Record = raw_record.deserialize(Some(&headers))?;
+        p.x1 += 400.;
+        p.x2 += 400.;
+        p.x3 += 400.;
+        p.x4 += 400.;
+        p.y1 += 400.;
+        p.y2 += 400.;
+        p.y3 += 400.;
+        p.y4 += 400.;
 
         // See https://www.youtube.com/watch?v=jTCCgxUXhW4
         // [ 2 2 2 2 ] * [h] = [0]
@@ -133,12 +145,18 @@ fn example() -> Result<(), Box<dyn Error>> {
             // RowSVector::<f64, 9>::from_vec(vec![0., 0., 0., 0., 0., 0., 0., 0., 1.]),
         ]);
         // dbg!(aa);
-        // let bb: SMatrix<f64, 1, 8> = SMatrix::from_vec(vec![0., 0., 0., 0., 0., 0., 0., 0.]);
+        // let bb: SMatrix<f64, 1, 9> = SMatrix::from_vec(vec![0., 0., 0., 0., 0., 0., 0., 0., 1.]);
+        // [1] * [abc] = [0]
+        // aa  *  X    = bb
+        // X = bb/aa
+        // X = bb * aa^{-1}
+        // let h = bb * aa.try_inverse().unwrap();
+
         // according to https://medium.com/all-things-about-robotics-and-computer-vision/homography-and-how-to-calculate-it-8abf3a13ddc5,
         // to solve the matrix, SVD is used. How different is that from inverse?
         // let h = bb * aa.try_inverse().unwrap();
 
-        let svd = aa.svd(true, true);
+        // let svd = aa.svd(true, true);
 
         // **
         // code form https://github.com/dimforge/nalgebra/issues/349#issuecomment-404242773
@@ -157,15 +175,39 @@ fn example() -> Result<(), Box<dyn Error>> {
         // // Reorder u and v using order
         // **
 
-
-        dbg!(svd.singular_values);
-        let h = svd.v_t.unwrap();
-        let h = h.column(7);
+        // dbg!(svd.singular_values);
+        // let h = svd.v_t.unwrap();
+        // let h = h.column(7);
         // see https://sites.ecse.rpi.edu//~qji/CV/svd_review.pdf
+        let aa_transpose = aa.transpose();
+        let a_t_a = aa * aa_transpose;
+        // let decomp = a_t_a.try_symmetric_eigen(0.000002, 0);
+        let mut decomp = a_t_a.symmetric_eigen();
 
+        let mut idx = 0;
+        let mut max = INFINITY;
+        for (i, &item) in decomp.eigenvalues.iter().enumerate() {
+            if item < max {
+                max = item;
+                idx = i;
+            }
+        };
+
+        // eigenvector
+        let h = decomp.eigenvectors.column(idx);
+
+        // dbg!(decomp);
+        // let matrix = eigenvalues::utils::generate_diagonal_dominant(20, 0.005);
+
+
+        // println!("eigenvalues:{}", eig.eigenvalues);
+        // println!("eigenvectors:{}", eig.eigenvectors);
+
+        // see https://www.youtube.com/watch?v=l_qjO4cM74o
 
         let homography: Matrix3<f64> =
             Matrix3::from_vec(vec![h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1.]);
+        dbg!(homography);
 
         // // now we can get the derived point for the image
         // let image_pos: Matrix3x1<f64> =
